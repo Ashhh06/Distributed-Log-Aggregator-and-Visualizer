@@ -1,3 +1,4 @@
+import { IndexEngine } from "@index/indexEngine";
 import { LogQueue, LogEntry } from "../queue/logQueue";
 import { FileManager } from "@storage/fileManager";
 
@@ -10,7 +11,9 @@ function sleep(ms: number) {
 
 export function startLogWorker(
   queue: LogQueue,
-  fileManager: FileManager
+  fileManager: FileManager,
+  indexEngine: IndexEngine
+
 ) {
   console.log("Log worker started...");
 
@@ -24,7 +27,16 @@ export function startLogWorker(
           continue;
         }
 
-        await fileManager.appendBatch(batch);
+        //await fileManager.appendBatch(batch);
+        const offsets = await fileManager.appendBatch(batch);
+        indexEngine.addBatch(batch, offsets);
+        indexEngine.printStats();
+
+        const testLog = await fileManager.readLogAt(offsets[0]);
+        console.log("Read back:", testLog);
+
+        //next step: pass to index engine
+        console.log("Offsets:", offsets); //for now we'll just log them.
 
         console.log(
           `Persisted batch of ${batch.length} logs. Queue size now: ${queue.size()}`

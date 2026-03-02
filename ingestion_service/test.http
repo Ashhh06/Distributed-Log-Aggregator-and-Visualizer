@@ -1,9 +1,7 @@
-POST http://localhost:3000/logs
+POST http://localhost:3000/query
 Content-Type: application/json
 
 {
-  "service": "payment",
-  "level": "ERROR",
-  "message": "transaction failed",
-  "timestamp": 1719999999
+  "service": "auth",
+  "startTime": 1720000000
 }

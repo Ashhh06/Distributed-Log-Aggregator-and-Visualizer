@@ -6,6 +6,7 @@ export interface LogQuery {
   level?: "INFO" | "WARN" | "ERROR" | "DEBUG";
   startTime?: number;
   endTime?: number;
+  limit?: number;
 }
 
 export class QueryEngine {
@@ -15,6 +16,7 @@ export class QueryEngine {
     ) {}
 
     async execute(query: LogQuery) {
+        const limit = Math.min(query.limit ?? 100, 1000); //enforce max limit of 1000
         let candidateOffsets: Set<number> | null = null;
 
         //service filter
@@ -40,24 +42,41 @@ export class QueryEngine {
         }
 
         //if no filters provided, return empty for now (could be dangerous to return everything)
-        if (!candidateOffsets) return [];
+        // if (!candidateOffsets) return []; //modified now.
+
+        //time-only query
+        if(!candidateOffsets) {
+            if(query.startTime !== undefined || query.endTime != undefined) {
+                candidateOffsets = this.indexEngine.getOffsetByTimeRange(
+                    query.startTime,
+                    query.endTime
+                );
+            } else {
+                return [];
+            }
+        }
 
         const results = [];
 
+        let count = 0;
+
         for(const offset of candidateOffsets) {
+            if(count >= limit) break;
+
             const logLine = await this.fileManager.readLogAt(offset);
             const log = JSON.parse(logLine);
 
             //time filtering
             if(
-                (query.startTime &&
+                (query.startTime !== undefined &&
                     log.timestamp < query.startTime) ||
-                (query.endTime &&
+                (query.endTime !== undefined &&
                     log.timestamp > query.endTime) 
             ) {
                 continue;
             }
             results.push(log);
+            count++;
         }
         return results;
     }

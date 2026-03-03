@@ -30,6 +30,8 @@ const start = async () => {
 
         const indexEngine = new IndexEngine();
 
+        await indexEngine.rebuildFromFile(fileManager);
+
         const queryEngine = new QueryEngine(
             fileManager,
             indexEngine

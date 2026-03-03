@@ -87,4 +87,8 @@ export class FileManager {
         }
         return logLine;
     }
+
+    getFilePath() {
+        return this.filePath;
+    }
 }

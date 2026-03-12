@@ -1,42 +1,45 @@
 import { LogEntry } from "@storage/fileManager";
 import { FileManager } from "@storage/fileManager";
-import { time } from "console";
-import { start } from "repl";
+
+export type LogPointer = {
+    shard: string;
+    offset: number;
+}
 
 export class IndexEngine {
-    private serviceIndex: Map<string, Set<number>> = new Map();
-    private levelIndex: Map<string, Set<number>> = new Map();
-    private timeIndex: Array<{ timestamp: number; offset: number }> = [];
+    private serviceIndex: Map<string, Set<LogPointer>> = new Map();
+    private levelIndex: Map<string, Set<LogPointer>> = new Map();
+    private timeIndex: Array<{ timestamp: number; pointer: LogPointer }> = [];
 
-    addBatch(logs: LogEntry[], offsets: number[]) {
+    addBatch(logs: LogEntry[], pointers: LogPointer[]) {
         for(let i = 0; i < logs.length; i++) {
             const log = logs[i];
-            const offset = offsets[i];
+            const pointer = pointers[i];
             
             //index by service
             if(!this.serviceIndex.has(log.service)) {
                 this.serviceIndex.set(log.service, new Set());
             }
-            this.serviceIndex.get(log.service)!.add(offset);
+            this.serviceIndex.get(log.service)!.add(pointer);
 
             //index by level
             if (!this.levelIndex.has(log.level)) {
                 this.levelIndex.set(log.level, new Set());
             }
-            this.levelIndex.get(log.level)!.add(offset);
+            this.levelIndex.get(log.level)!.add(pointer);
 
             //index by time
-            this.insertTimeEntry(log.timestamp, offset);
+            this.insertTimeEntry(log.timestamp, pointer);
         }
     }
 
     //sorted insert method
-    private insertTimeEntry(timestamp: number, offset: number) {
+    private insertTimeEntry(timestamp: number, pointer: LogPointer) {
         const len = this.timeIndex.length;
 
         //fast path - append if sorted
         if(len === 0 || timestamp >= this.timeIndex[len - 1].timestamp) {
-            this.timeIndex.push({ timestamp, offset });
+            this.timeIndex.push({ timestamp, pointer });
             return;
         }
 
@@ -58,7 +61,7 @@ export class IndexEngine {
                 right = mid - 1;
             }
         }
-        this.timeIndex.splice(left, 0, { timestamp, offset });
+        this.timeIndex.splice(left, 0, { timestamp, pointer });
     }
 
     //For debugging
@@ -68,11 +71,11 @@ export class IndexEngine {
         console.log("Total Time Index Entries:", this.timeIndex.length);
     }
 
-    getServiceOffsets(service: string): Set<number> | null {
+    getServiceOffsets(service: string): Set<LogPointer> | null {
         return this.serviceIndex.get(service) || null;
     }
 
-    getLevelOffsets(level: string): Set<number> | null {
+    getLevelOffsets(level: string): Set<LogPointer> | null {
         return this.levelIndex.get(level) || null;
     }
 
@@ -80,12 +83,12 @@ export class IndexEngine {
         return this.timeIndex;
     }
 
-    getOffsetByTimeRange(startTime? : number, endTime?: number) : Set<number> {
+    getOffsetByTimeRange(startTime? : number, endTime?: number) : Set<LogPointer> {
         if(startTime === undefined && endTime === undefined) {
             return new Set();
         }
 
-        const result = new Set<number>();
+        const result = new Set<LogPointer>();
         const n = this.timeIndex.length;
 
         if(n === 0) return result;
@@ -120,7 +123,7 @@ export class IndexEngine {
                 (startTime === undefined || entry.timestamp >= startTime) &&
                 (endTime === undefined || entry.timestamp <= endTime)
             ) {
-                result.add(entry.offset);
+                result.add(entry.pointer);
             }
         }
         return result;
@@ -156,7 +159,10 @@ export class IndexEngine {
 
             const log = JSON.parse(line);
 
-            this.addBatch([log], [offset]);
+            this.addBatch([log], [{
+                shard: "default",
+                offset: offset
+            }]);
 
             offset += Buffer.byteLength(line, "utf8") + 1; //+1 for newline
         }

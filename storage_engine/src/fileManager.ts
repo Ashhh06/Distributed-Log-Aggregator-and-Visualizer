@@ -1,4 +1,6 @@
 import { promises as fs } from "fs";
+import { FileHandle } from "fs/promises";
+import { LogPointer } from "@index/indexEngine";
 import path from "path";
 
 export interface LogEntry {
@@ -10,10 +12,15 @@ export interface LogEntry {
 }
 
 export class FileManager {
-    private fileHandle: fs.FileHandle | null = null;
+    private shardHandles: Map<string, FileHandle> = new Map();
+    private fileHandle!: FileHandle;
+
     private filePath: string;
+    private dataDir: string;
+    
 
     constructor() {
+        this.dataDir = path.resolve(__dirname, "../data");
         this.filePath = path.resolve(
             __dirname,
             "../data/logs.log"
@@ -26,37 +33,54 @@ export class FileManager {
         console.log("Storage initialized at:", this.filePath);
     }
 
-    async appendBatch(logs: LogEntry[]) {
-        if(!this.fileHandle) {
-            throw new Error("Storage not initialized");
+    async appendBatch(logs: LogEntry[]) : Promise<LogPointer[]>{
+        const shardGroups = new Map<string, LogEntry[]>();
+
+        //group logs by shard
+        for(const log of logs) {
+            const shardId = this.getShardId(log.timestamp);
+
+            if(!shardGroups.has(shardId)) {
+                shardGroups.set(shardId, []);
+            }
+
+            shardGroups.get(shardId)!.push(log);
         }
 
-        //get current file size
-        const stats = await this.fileHandle.stat();
-        let currentOffset = stats.size;
+        const pointers: LogPointer[] = [];
 
-        const offsets: number[] = [];
-        const lines: string[] = [];
+        //write per shard
+        for (const [shardId, shardLogs] of shardGroups.entries()) {
 
-        for (const log of logs) {
-            const line = JSON.stringify(log);
-            offsets.push(currentOffset);
-            lines.push(line);
+            const handle = await this.getShardHandle(shardId);
 
-            //+1 for newline character
-            currentOffset += Buffer.byteLength(line, "utf8") + 1;
+            const stats = await handle.stat();
+            let currentOffset = stats.size;
+
+            const lines: string[] = [];
+
+            for(const log of shardLogs) {
+                const line = JSON.stringify(log);
+
+                pointers.push({
+                    shard: shardId,
+                    offset: currentOffset
+                });
+
+                lines.push(line);
+
+                currentOffset += Buffer.byteLength(line, "utf8") + 1;
+            }
+
+            const data = lines.join("\n") + "\n";
+
+            await handle.appendFile(data);
         }
-
-        const data = lines.join("\n") + "\n";
-
-        await this.fileHandle.appendFile(data);
-        return offsets;
+        return pointers;
     }
 
-    async readLogAt(offset: number): Promise<string> {
-        if(!this.fileHandle) {
-            throw new Error("Storage not initialized");
-        }
+    async readLogAt(shard: string, offset: number): Promise<string> {
+        const handle = await this.getShardHandle(shard);
 
         const CHUNK_SIZE = 1024;
         let position = offset;
@@ -65,7 +89,7 @@ export class FileManager {
         const buffer = Buffer.alloc(CHUNK_SIZE);
 
         while(true) {
-            const { bytesRead } = await this.fileHandle.read(
+            const { bytesRead } = await handle.read(
                 buffer,
                 0,
                 CHUNK_SIZE,
@@ -90,5 +114,28 @@ export class FileManager {
 
     getFilePath() {
         return this.filePath;
+    }
+
+    private getShardId(timestamp: number): string {
+        const date = new Date(timestamp);
+        return date.toISOString().slice(0, 10); //YYYY-MM-DD
+    }
+
+    private async getShardHandle(shardId: string): Promise<FileHandle> {
+        if (this.shardHandles.has(shardId)) {
+            return this.shardHandles.get(shardId)!; //! = non null assertion operator: you promise typescript that it will be defined later.
+        }
+
+        const filePath = `${this.dataDir}/${shardId}.log`;
+
+        //ensure directory exists
+        await fs.mkdir(this.dataDir, { recursive: true });
+
+        //open file (will create if doesn't exist)
+        const handle = await fs.open(filePath, "a+");
+        
+        this.shardHandles.set(shardId, handle);
+
+        return handle;
     }
 }

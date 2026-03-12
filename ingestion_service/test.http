@@ -1,6 +1,9 @@
-POST http://localhost:3000/query
+POST http://localhost:3000/logs
 Content-Type: application/json
 
 {
-  "startTime": 2000
+  "service": "auth",
+  "level": "INFO",
+  "message": "today log",
+  "timestamp": 1710000000000
 }

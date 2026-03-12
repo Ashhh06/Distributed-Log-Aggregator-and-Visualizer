@@ -28,15 +28,15 @@ export function startLogWorker(
         }
 
         //await fileManager.appendBatch(batch);
-        const offsets = await fileManager.appendBatch(batch);
-        indexEngine.addBatch(batch, offsets);
+        const pointers = await fileManager.appendBatch(batch);
+        indexEngine.addBatch(batch, pointers);
         indexEngine.printStats();
 
-        const testLog = await fileManager.readLogAt(offsets[0]);
+        const testLog = await fileManager.readLogAt(pointers[0].shard, pointers[0].offset);
         console.log("Read back:", testLog);
 
         //next step: pass to index engine
-        console.log("Offsets:", offsets); //for now we'll just log them.
+        console.log("Pointers:", pointers); //for now we'll just log them.
 
         console.log(
           `Persisted batch of ${batch.length} logs. Queue size now: ${queue.size()}`

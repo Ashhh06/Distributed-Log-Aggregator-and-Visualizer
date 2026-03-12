@@ -1,5 +1,6 @@
 import { FileManager } from "@storage/fileManager";
 import { IndexEngine } from "@index/indexEngine";
+import { LogPointer } from "@index/indexEngine";
 
 export interface LogQuery {
   service?: string;
@@ -17,7 +18,7 @@ export class QueryEngine {
 
     async execute(query: LogQuery) {
         const limit = Math.min(query.limit ?? 100, 1000); //enforce max limit of 1000
-        let candidateOffsets: Set<number> | null = null;
+        let candidateOffsets: Set<LogPointer> | null = null;
 
         //service filter
         if (query.service) {
@@ -60,10 +61,14 @@ export class QueryEngine {
 
         let count = 0;
 
-        for(const offset of candidateOffsets) {
+        for(const pointer of candidateOffsets) {
             if(count >= limit) break;
 
-            const logLine = await this.fileManager.readLogAt(offset);
+            const logLine = await this.fileManager.readLogAt(pointer.shard, pointer.offset);
+            
+            if(!logLine || !logLine.trim()) {
+                continue; //skip empty lines
+            }
             const log = JSON.parse(logLine);
 
             //time filtering
@@ -81,15 +86,19 @@ export class QueryEngine {
         return results;
     }
 
-    private intersect(setA: Set<number>, setB: Set<number>): Set<number> {
-        const smaller = setA.size < setB.size ? setA : setB;
-        const larger = setA.size < setB.size ? setB : setA;
+    private intersect(setA: Set<LogPointer>, setB: Set<LogPointer>): Set<LogPointer> {
+        const result = new Set<LogPointer>();
 
-        const result = new Set<number>();
+        const map = new Map<string, LogPointer>();
 
-        for(const value of smaller) {
-            if(larger.has(value)) {
-                result.add(value);
+        for(const p of setA) {
+            map.set(`${p.shard}:${p.offset}`, p);
+        }
+
+        for(const p of setB) {
+            const key = `${p.shard}:${p.offset}`;
+            if(map.has(key)) {
+                result.add(p);
             }
         }
         return result;

@@ -53,7 +53,12 @@ export class QueryEngine {
                     query.endTime
                 );
             } else {
-                return [];
+                //return recent logs if no filters
+                candidateOffsets = new Set(
+                    this.indexEngine.getTimeEntries()
+                    .slice(-100)
+                    .map(entry => entry.pointer)
+                );
             }
         }
 

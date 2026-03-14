@@ -9,6 +9,8 @@ import { FileManager } from "@storage/fileManager";
 import { IndexEngine } from "@index/indexEngine";
 import { QueryEngine } from "@query/queryEngine";
 
+import cors from "@fastify/cors";
+
 const fastify = Fastify({
     logger: true
 });
@@ -25,6 +27,11 @@ fastify.get("/health", async () => {
 
 const start = async () => {
     try {   
+
+        await fastify.register(cors, {
+            origin: "*",
+        });
+
         const fileManager = new FileManager();
         await fileManager.init();
 

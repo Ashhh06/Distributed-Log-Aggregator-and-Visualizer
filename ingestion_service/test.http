@@ -2,8 +2,8 @@ POST http://localhost:3000/logs
 Content-Type: application/json
 
 {
-  "service": "auth",
-  "level": "INFO",
-  "message": "today log",
-  "timestamp": 1710000000000
+  "service": "payment",
+  "level": "ERROR",
+  "message": "payment failed",
+  "timestamp": 1709942400000
 }

@@ -1,5 +1,9 @@
 {
   "devDependencies": {
     "@types/node": "^25.3.3"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "node-fetch": "^3.3.2"
   }
 }

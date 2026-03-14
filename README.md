@@ -1,183 +1,364 @@
-# Distributed Log Aggregator and Visualizer
+# Distributed Log Aggregator & Visualizer
 
-A horizontally scalable log ingestion, indexing, and query system inspired by modern observability platforms like Elasticsearch and Grafana Loki.
+A **mini observability platform** that ingests, stores, indexes, and visualizes logs from multiple services in real time.
+The system demonstrates how modern log platforms (like **ELK Stack** or **Grafana Loki**) process and query logs efficiently.
 
-## Features Implemented
+This project implements a **complete end-to-end pipeline**:
 
-### 🔹 Ingestion Layer
-- Fastify-based HTTP ingestion API
-- Strict JSON schema validation
-- Asynchronous producer-consumer architecture
-- Bounded in-memory queue (backpressure control)
-- HTTP 429 on overload
+```
+Services → Ingestion API → Queue → Worker → Sharded Storage → Index Engine → Query Engine → React Dashboard
+```
 
-### 🔹 Storage Engine
-- Append-only log storage (JSONL format)
-- Batch writes for disk efficiency
-- Byte-offset tracking for each log
-- Random-access read using file offsets
-- Read + append file descriptor mode (`a+`)
+---
 
-### 🔹 Indexing Engine
-- In-memory inverted index:
-  - `service → Set<byteOffset>`
-  - `level → Set<byteOffset>`
-- Time index for timestamp-based filtering
-- Offset-based retrieval (no log duplication in memory)
+# Features
 
-### 🔹 Query Engine
-Supports structured queries:
+### Log Ingestion
+
+* HTTP API for ingesting logs (`POST /logs`)
+* High-throughput ingestion using an **in-memory queue**
+* Asynchronous **worker-based batch processing**
+
+### Storage Engine
+
+* **Append-only JSONL log storage**
+* **Time-based sharding** (`YYYY-MM-DD.log`)
+* Efficient **byte-offset reads** for fast log retrieval
+
+### Indexing Engine
+
+* In-memory **inverted index**
+* Indexed by:
+
+  * service
+  * log level
+  * timestamp
+* **Binary search** for fast time-range queries
+
+### Query Engine
+
+Supports queries by:
+
+* service
+* log level
+* time range
+
+Example:
 
 ```json
 {
   "service": "auth",
-  "level": "ERROR",
-  "startTime": 1719990000,
-  "endTime": 1720000000
+  "level": "ERROR"
 }
+```
+
+Returns matching logs using index lookups instead of scanning files.
+
+### Visualization Dashboard
+
+* Built with **React + Vite**
+* Displays logs in a table
+* Filter logs by:
+
+  * service
+  * level
+* Color-coded severity levels
+
+```
+INFO  → green
+WARN  → yellow
+ERROR → red
+DEBUG → gray
+```
+
+### Log Simulation
+
+Simulated services generate logs continuously:
+
+* auth service
+* payment service
+
+This creates a **live log stream** for testing the dashboard.
+
+---
+
+# Architecture
+
+```
+              +-------------------+
+              |   React Dashboard |
+              +---------+---------+
+                        |
+                        | POST /query
+                        |
+                +-------v--------+
+                | Fastify API    |
+                | (Ingestion)    |
+                +-------+--------+
+                        |
+                        v
+                 +------+------+
+                 | Log Queue   |
+                 | (In-memory) |
+                 +------+------+
+                        |
+                        v
+                 +------+------+
+                 | Worker      |
+                 | Batch write |
+                 +------+------+
+                        |
+                        v
+           +--------------------------+
+           | Storage Engine           |
+           | Sharded JSONL files      |
+           | YYYY-MM-DD.log           |
+           +-----------+--------------+
+                       |
+                       v
+                +------+------+
+                | Index Engine |
+                | service      |
+                | level        |
+                | time         |
+                +------+------+
+                       |
+                       v
+                +------+------+
+                | Query Engine |
+                +-------------+
+```
+
+---
+
+# Project Structure
+
+```
+log_system
+│
+├── ingestion_service
+│   ├── routes
+│   │   ├── logRoutes.ts
+│   │   └── queryRoutes.ts
+│   ├── queue
+│   │   └── logQueue.ts
+│   ├── worker
+│   │   └── logWorker.ts
+│   └── server.ts
+│
+├── storage_engine
+│   └── fileManager.ts
+│
+├── index_engine
+│   └── indexEngine.ts
+│
+├── query_engine
+│   └── queryEngine.ts
+│
+├── dashboard
+│   ├── src
+│   │   └── App.tsx
+│   └── vite.config.ts
+│
+└── simulators
+    ├── auth-service.ts
+    └── payment-service.ts
+```
 
+---
 
+# Installation
 
-### Query execution strategy:
+Clone the repository:
 
-1. Fetch candidate offset sets
+```
+git clone <your-repo-url>
+cd log_system
+```
 
-2. Intersect smallest sets first
+Install dependencies for backend:
 
-3. Read matching logs using byte-offset
+```
+npm install
+```
 
-4. Apply time filtering
+Install dashboard dependencies:
 
-5. Return parsed JSON logs
+```
+cd dashboard
+npm install
+```
 
+---
 
-### Architechture Overview
+# Running the System
 
-Client
-   ↓
-Ingestion API (Fastify)
-   ↓
-Bounded Queue (Backpressure)
-   ↓
-Async Worker
-   ↓
-Storage Engine (Append-only JSONL)
-   ↓
-Index Engine (In-memory offset maps)
-   ↓
-Query Engine
-   ↓
-Response
+### Start Backend
 
+```
+cd ingestion_service
+npm run dev
+```
 
-### Tech Stack
+Backend runs on:
 
-Node.js (TypeScript)
+```
+http://localhost:3000
+```
 
-Fastify
+---
 
-Custom in-memory queue
+### Start Dashboard
 
-Custom append-only storage engine
+```
+cd dashboard
+npm run dev
+```
 
-Byte-offset indexing
+Open:
 
-Monorepo with TypeScript path aliases
+```
+http://localhost:5173
+```
 
+---
 
+### Run Log Simulators
 
-🔍 Key Engineering Decisions
+Open new terminals:
 
-1. Append-Only Storage
+```
+cd simulators
+npx ts-node auth-service.ts
+```
 
-Logs are immutable and high-write volume.
-Append-only ensures:
+```
+cd simulators
+npx ts-node payment-service.ts
+```
 
-Sequential disk writes
+Logs will now stream into the system.
 
-High throughput
+---
 
-Simpler recovery
+# API
 
-2. Byte Offset Indexing
+## Ingest Log
 
-Instead of storing logs in memory:
+```
+POST /logs
+```
 
-Index stores byte offsets
+Example:
 
-Logs remain on disk
+```json
+{
+  "service": "auth",
+  "level": "INFO",
+  "message": "user login",
+  "timestamp": 1709856000000
+}
+```
 
-Enables O(1) file seek
+---
 
-3. Bounded Queue + Backpressure
+## Query Logs
 
-Prevents memory explosion under high load.
-Returns HTTP 429 when queue is full.
+```
+POST /query
+```
 
-4. Batch Processing
+Example queries:
 
-Worker processes logs in batches for:
+### Query by service
 
-Fewer disk syscalls
+```json
+{
+  "service": "auth"
+}
+```
 
-Higher throughput
+### Query by level
 
-Reduced I/O overhead
+```json
+{
+  "level": "ERROR"
+}
+```
 
-5. Set-Based Inverted Index
+### Query by time range
 
-Uses Set<number> for offset tracking to:
+```json
+{
+  "startTime": 1709856000000,
+  "endTime": 1710000000000
+}
+```
 
-Avoid duplicates
+---
 
-Ensure correctness
+# Example Log File
 
-Simplify intersection logic
+Logs are stored as **JSON lines**:
 
+```
+2024-03-08.log
 
+{"service":"auth","level":"INFO","message":"login","timestamp":1709856000000}
+{"service":"payment","level":"ERROR","message":"payment failed","timestamp":1709856012000}
+```
 
+---
 
-📊 Current Capabilities
+# Technologies Used
 
-Insert logs via HTTP
+Backend
 
-Persist logs to disk
+* Node.js
+* TypeScript
+* Fastify
 
-Build in-memory inverted index
+Frontend
 
-Execute structured queries
+* React
+* Vite
 
-Random-access read from file
+Other Concepts
 
+* Async queues
+* Batch processing
+* Append-only storage
+* Sharded log files
+* Inverted indexing
+* Binary search time indexing
 
+---
 
+# Learning Outcomes
 
-⚠️ Current Limitations
+This project demonstrates:
 
-Index is in-memory only (lost on restart)
+* Designing **high-throughput log ingestion pipelines**
+* Building **custom storage engines**
+* Implementing **in-memory indexing**
+* Query optimization using **index lookups**
+* Building a **full-stack observability tool**
 
-No sharding yet
+---
 
-No replication yet
+# Future Improvements
 
-No full-text search
+Potential upgrades:
 
-Time index not optimized (linear scan)
+* pagination for queries
+* full-text search
+* WebSocket live log streaming
+* distributed ingestion nodes
+* persistent index snapshots
+* advanced dashboard analytics
 
+---
 
+# Author - Akshad
 
-
-
-🛠️ Next Phases
-
-Sorted time index with binary search
-
-Sharding (time-based partitioning)
-
-Index persistence & recovery
-
-Replication (leader-follower simulation)
-
-Load testing & benchmarking
-
-Dashboard visualization
+Built as a backend systems project demonstrating log aggregation, indexing, and visualization techniques used in real observability platforms.

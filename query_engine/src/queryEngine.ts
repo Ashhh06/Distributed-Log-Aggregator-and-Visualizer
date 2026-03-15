@@ -54,11 +54,8 @@ export class QueryEngine {
                 );
             } else {
                 //return recent logs if no filters
-                candidateOffsets = new Set(
-                    this.indexEngine.getTimeEntries()
-                    .slice(-100)
-                    .map(entry => entry.pointer)
-                );
+                const recent = this.indexEngine.getTimeEntries().slice(-limit);
+                candidateOffsets = new Set(recent.map(entry => entry.pointer));
             }
         }
 
@@ -88,6 +85,7 @@ export class QueryEngine {
             results.push(log);
             count++;
         }
+        results.sort((a,b) => b.timestamp - a.timestamp); //sort by timestamp
         return results;
     }
 

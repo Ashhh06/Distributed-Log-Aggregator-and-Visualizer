@@ -48,11 +48,26 @@ function App() {
     }
   };
 
+  const stats = {
+    INFO: logs.filter(l => l.level === "INFO").length,
+    WARN: logs.filter(l => l.level === "WARN").length,
+    ERROR: logs.filter(l => l.level === "ERROR").length,
+    DEBUG: logs.filter(l => l.level === "DEBUG").length,
+  }
+
 
   return (
     <div style={{ padding: "40px", fontFamily: "Arial" }}>
 
       <h1>Distributed Log Aggregator and Visualizer</h1>
+
+      <div style={{ marginBottom: "20px" }}>
+        <h2>Statistics</h2>
+        <p>INFO: {stats.INFO}</p>
+        <p>WARN: {stats.WARN}</p>
+        <p>ERROR: {stats.ERROR}</p>
+        <p>DEBUG: {stats.DEBUG}</p>
+      </div>
 
       {/* Filters */}
       <div style={{ marginBottom: "20px" }}>
@@ -97,7 +112,7 @@ function App() {
         </thead>
 
         <tbody>
-          {logs.map((log, i) => (
+          {logs.slice(0, 200).map((log, i) => (
             <tr key={i}>
               <td>{log.service}</td>
               <td style={{ color: getLevelColor(log.level), fontWeight: "bold" }}>{log.level}</td>

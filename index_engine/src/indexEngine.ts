@@ -1,5 +1,5 @@
-import { LogEntry } from "@storage/fileManager";
-import { FileManager } from "@storage/fileManager";
+import { LogEntry } from "../../storage_engine/src/fileManager";
+import { FileManager } from "../../storage_engine/src/fileManager";
 
 export type LogPointer = {
     shard: string;
@@ -12,12 +12,12 @@ export class IndexEngine {
     private timeIndex: Array<{ timestamp: number; pointer: LogPointer }> = [];
 
     addBatch(logs: LogEntry[], pointers: LogPointer[]) {
-        for(let i = 0; i < logs.length; i++) {
+        for (let i = 0; i < logs.length; i++) {
             const log = logs[i];
             const pointer = pointers[i];
-            
+
             //index by service
-            if(!this.serviceIndex.has(log.service)) {
+            if (!this.serviceIndex.has(log.service)) {
                 this.serviceIndex.set(log.service, new Set());
             }
             this.serviceIndex.get(log.service)!.add(pointer);
@@ -38,7 +38,7 @@ export class IndexEngine {
         const len = this.timeIndex.length;
 
         //fast path - append if sorted
-        if(len === 0 || timestamp >= this.timeIndex[len - 1].timestamp) {
+        if (len === 0 || timestamp >= this.timeIndex[len - 1].timestamp) {
             this.timeIndex.push({ timestamp, pointer });
             return;
         }
@@ -47,15 +47,15 @@ export class IndexEngine {
         let left = 0;
         let right = len - 1;
 
-        while(left <= right) {
+        while (left <= right) {
             const mid = Math.floor((left + right) / 2);
-            
-            if(this.timeIndex[mid].timestamp === timestamp) {
+
+            if (this.timeIndex[mid].timestamp === timestamp) {
                 left = mid;
                 break;
             }
 
-            if(this.timeIndex[mid].timestamp < timestamp) {
+            if (this.timeIndex[mid].timestamp < timestamp) {
                 left = mid + 1;
             } else {
                 right = mid - 1;
@@ -83,26 +83,26 @@ export class IndexEngine {
         return this.timeIndex;
     }
 
-    getOffsetByTimeRange(startTime? : number, endTime?: number) : Set<LogPointer> {
-        if(startTime === undefined && endTime === undefined) {
+    getOffsetByTimeRange(startTime?: number, endTime?: number): Set<LogPointer> {
+        if (startTime === undefined && endTime === undefined) {
             return new Set();
         }
 
         const result = new Set<LogPointer>();
         const n = this.timeIndex.length;
 
-        if(n === 0) return result;
+        if (n === 0) return result;
 
         //find lower bound
         let left = 0;
         let right = n - 1;
         let startIndex = 0;
 
-        if(startTime !== undefined) {
-            while(left <= right) {
+        if (startTime !== undefined) {
+            while (left <= right) {
                 const mid = Math.floor((left + right) / 2);
 
-                if(this.timeIndex[mid].timestamp < startTime) {
+                if (this.timeIndex[mid].timestamp < startTime) {
                     left = mid + 1;
                 } else {
                     startIndex = mid;
@@ -112,14 +112,14 @@ export class IndexEngine {
         }
 
         //collect until endTime
-        for(let i = startIndex; i < n; i++) {
+        for (let i = startIndex; i < n; i++) {
             const entry = this.timeIndex[i];
 
-            if(endTime !== undefined && entry.timestamp > endTime) {
+            if (endTime !== undefined && entry.timestamp > endTime) {
                 break;
             }
 
-            if(
+            if (
                 (startTime === undefined || entry.timestamp >= startTime) &&
                 (endTime === undefined || entry.timestamp <= endTime)
             ) {
@@ -130,41 +130,57 @@ export class IndexEngine {
     }
 
     async rebuildFromFile(fileManager: FileManager) {
-        const filePath = fileManager.getFilePath();
-
         const fs = await import("fs");
+        const path = await import("path");
         const readline = await import("readline");
 
-        if(!fs.existsSync(filePath)) {
-            console.log("No existing log file. Skipping rebuild.");
+        const dataDir = path.resolve(__dirname, "../../storage_engine/data");
+
+        if (!fs.existsSync(dataDir)) {
+            console.log("No data directory found. Skipping rebuild.");
             return;
         }
 
-        console.log("Rebuilding index from log file...");
+        console.log("Rebuilding index from shard files...");
 
-        const stream = fs.createReadStream(filePath, { encoding: "utf8" });
+        const files = fs.readdirSync(dataDir);
 
-        const rl = readline.createInterface({
-            input: stream,
-            crlfDelay: Infinity,
-        });
+        for (const file of files) {
+            if (!file.endsWith(".log")) continue;
 
-        let offset = 0;
+            const shardId = file.replace(".log", "");
+            const filePath = path.join(dataDir, file);
 
-        for await (const line of rl) {
-            if(!line.trim()) {
-                offset += 1;
-                continue;
+            console.log(`Processing shard: ${file}`);
+
+            const stream = fs.createReadStream(filePath, { encoding: "utf8" });
+
+            const rl = readline.createInterface({
+                input: stream,
+                crlfDelay: Infinity,
+            });
+
+            let offset = 0;
+
+            for await (const line of rl) {
+                if (!line.trim()) {
+                    offset += 1;
+                    continue;
+                }
+
+                try {
+                    const log = JSON.parse(line);
+
+                    this.addBatch([log], [{
+                        shard: shardId,
+                        offset: offset
+                    }]);
+
+                    offset += Buffer.byteLength(line, "utf8") + 1;
+                } catch (err) {
+                    console.error("Error parsing line:", err);
+                }
             }
-
-            const log = JSON.parse(line);
-
-            this.addBatch([log], [{
-                shard: "default",
-                offset: offset
-            }]);
-
-            offset += Buffer.byteLength(line, "utf8") + 1; //+1 for newline
         }
 
         console.log("Rebuild complete.");

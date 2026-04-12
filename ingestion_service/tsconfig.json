@@ -3,5 +3,8 @@
   "compilerOptions": {
     "outDir": "dist"
   },
-  "include": ["src", "../storage_engine/src"]
+  "include": [
+    "src",
+    "../storage_engine/src"
+  ]
 }
